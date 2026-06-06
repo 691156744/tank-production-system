@@ -1,0 +1,2198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>油罐车生产管理系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', sans-serif; margin: 0; padding: 15px; background: linear-gradient(135deg, #667eea, #764ba2); min-height: 100vh; }
+        .header { background: white; border-radius: 12px; padding: 15px 20px; margin-bottom: 15px; }
+        .content-card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+        .stat-card { background: linear-gradient(135deg, #1a5fb4, #4a90d9); color: white; border-radius: 10px; padding: 15px; text-align: center; }
+        .stat-card.warning { background: linear-gradient(135deg, #e5a50a, #fbbf24); }
+        .stat-card.success { background: linear-gradient(135deg, #26a269, #34d399); }
+        .stat-card.danger { background: linear-gradient(135deg, #c01c28, #f87171); }
+        .nav-pills .nav-link.active { background: #1a5fb4; }
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 15px; font-size: 12px; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-producing { background: #dbeafe; color: #1e40af; }
+        .status-completed { background: #d1fae5; color: #065f46; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: none; }
+        .modal-overlay.show { display: block; }
+        .modal-box { background: white; border-radius: 12px; width: 90%; max-width: 650px; margin: 30px auto; padding: 20px; }
+        .process-item { padding: 10px; margin: 5px 0; background: #f5f5f5; border-radius: 6px; border-left: 4px solid #aaa; }
+        .process-item.done { border-left-color: #28a745; background: #d4edda; }
+        .process-item.active { border-left-color: #007bff; background: #cce5ff; }
+        .process-row { display: flex; justify-content: space-between; align-items: center; }
+        #processTracker { max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div style="max-width: 1400px; margin: 0 auto;">
+        <div class="header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 style="margin:0;">油罐车生产管理系统</h4>
+                <button class="btn btn-sm btn-outline-info" onclick="refreshData()">刷新</button>
+            </div>
+            <ul class="nav nav-pills mt-2">
+                <li class="nav-item"><a class="nav-link active" data-tab="dashboard" href="#">仪表盘</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="warning" href="#">交付预警</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="orders" href="#">新增订单</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="production" href="#">生产排产</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="list" href="#">订单列表</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="daily" href="#">每日通报</a></li>
+                <li class="nav-item"><a class="nav-link" data-tab="deleted" href="#">已删除</a></li>
+            </ul>
+        </div>
+
+        <div id="dashboard" class="tab-content active">
+            <div class="row">
+                <div class="col-4 col-md-2"><div class="stat-card">总订单<div id="totalOrders">0</div></div></div>
+                <div class="col-4 col-md-2"><div class="stat-card warning">待生产<div id="pendingOrders">0</div></div></div>
+                <div class="col-4 col-md-2"><div class="stat-card">生产中<div id="producingOrders">0</div></div></div>
+                <div class="col-4 col-md-2"><div class="stat-card success">已完成<div id="completedOrders">0</div></div></div>
+                <div class="col-4 col-md-2"><div class="stat-card success">已入库<div id="warehousedOrders">0</div></div></div>
+                <div class="col-4 col-md-2"><div class="stat-card danger">本月产量<div id="monthlyOutput">0</div></div></div>
+            </div>
+            <div class="content-card">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 style="margin:0;">车辆类型统计</h5>
+                    <div class="d-flex align-items-center">
+                        <label class="me-2">选择年份：</label>
+                        <select class="form-select form-select-sm" id="statsYear" style="width:100px;" onchange="updateDashboard()">
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header bg-warning text-white">当日完工</div>
+                            <div class="card-body" id="dayVehicleStats"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header bg-primary text-white">本周完工</div>
+                            <div class="card-body" id="weekVehicleStats"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header bg-success text-white">本月完工</div>
+                            <div class="card-body" id="monthVehicleStats"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">本年完工</div>
+                            <div class="card-body" id="yearVehicleStats"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="content-card">
+                <div class="row mb-2">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="searchOrderNo" placeholder="输入订单号查询">
+                            <button class="btn btn-primary" type="button" onclick="searchOrder()">查询</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="searchResult" class="mb-2" style="display:none;"></div>
+                <h5>最近订单</h5>
+                <table class="table table-sm table-hover" id="recentTable"><thead><tr><th>订单号</th><th>优先</th><th>罐体容积</th><th>车辆类型</th><th>底盘到厂时间</th><th>状态</th><th>当前工序</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+
+        <div id="warning" class="tab-content">
+            <div class="content-card">
+                <h4>交付预警 <small class="text-muted ms-2">(按交付日期统计)</small> <button class="btn btn-info btn-sm float-end" onclick="exportWarning()">导出Excel</button></h4>
+                <!-- 预警等级说明 -->
+                <div class="alert alert-light mb-3">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <span><span class="badge bg-danger">🚨 🔴紧急</span> ≤3天</span>
+                        <span class="ms-2"><span class="badge bg-warning text-dark">🟠警告</span> 4-7天</span>
+                        <span class="ms-2"><span class="badge bg-secondary">🟡注意</span> 8-14天</span>
+                        <span class="ms-2"><span class="badge bg-success">✅正常</span> >14天</span>
+                    </div>
+                </div>
+                <!-- 预警订单表格 -->
+                <table class="table table-sm table-hover" id="warningTable">
+                    <thead>
+                        <tr>
+                            <th>排序</th>
+                            <th>订单号</th>
+                            <th>优先</th>
+                            <th>罐体容积</th>
+                            <th>车辆类型</th>
+                            <th>底盘到厂时间</th>
+                            <th>交付日期</th>
+                            <th>剩余</th>
+                            <th>预警</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody id="warningTableBody"></tbody>
+                </table>
+                <div id="noWarningData" class="text-center text-muted py-4" style="display:none;">暂无预警订单</div>
+            </div>
+        </div>
+
+                <div id="orders" class="tab-content">
+            <div class="content-card">
+                <h4>新增生产订单</h4>
+                <form id="orderForm">
+                    <div class="row">
+                        <div class="col-md-4 mb-2"><label class="form-label">生产订单号</label><input type="text" class="form-control" id="productionOrderNo" placeholder="不填则自动生成" onfocus="selectLastHistory('productionOrderNo')" onchange="saveToHistory(this.value, 'productionOrderNo')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">产品型号 *</label><input type="text" class="form-control" id="productModel" placeholder="例如：CSC5160GYY" onfocus="selectLastHistory('productModel')" onchange="saveToHistory(this.value, 'productModel')" required></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">罐体容积</label><input type="text" class="form-control" id="tankVolumeInput" placeholder="例如：20000L" onfocus="selectLastHistory('tankVolume')" onchange="saveToHistory(this.value, 'tankVolume')"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-2"><label class="form-label">底盘到厂时间</label><input type="date" class="form-control" id="chassisDate" placeholder="底盘到厂日期" onfocus="selectLastHistory('chassisDate')" onchange="saveToHistory(this.value, 'chassisDate')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">车辆类型 *</label><select class="form-select" id="vehicleType" required onfocus="selectLastHistory('vehicleType')" onchange="saveToHistory(this.value, 'vehicleType')"><option value="">请选择</option><option value="加油车">加油车</option><option value="运油车">运油车</option><option value="出口车">出口车</option><option value="铝合金油车">铝合金油车</option><option value="铝合金半挂">铝合金半挂</option><option value="碳钢半挂">碳钢半挂</option><option value="水车">水车</option><option value="罐体">罐体</option><option value="其它">其它</option></select></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">数量 *</label><input type="number" class="form-control" id="quantity" value="1" required onfocus="selectLastHistory('quantity')" onchange="saveToHistory(this.value, 'quantity')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">优先等级</label><select class="form-select" id="priority" onfocus="selectLastHistory('priority')" onchange="saveToHistory(this.value, 'priority')"><option value="普通">普通</option><option value="加急">加急</option><option value="紧急">紧急</option></select></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-2"><label class="form-label">操作人员</label><input type="text" class="form-control" id="operator" placeholder="录入人员姓名" onfocus="selectLastHistory('operator')" onchange="saveToHistory(this.value, 'operator')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">下单时间 *</label><input type="datetime-local" class="form-control" id="orderTime" required onfocus="selectLastHistory('orderTime')" onchange="saveToHistory(this.value, 'orderTime')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">交付时间</label><input type="date" class="form-control" id="deliveryDate" onfocus="selectLastHistory('deliveryDate')" onchange="saveToHistory(this.value, 'deliveryDate')"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-2"><label class="form-label">客户名称</label><input type="text" class="form-control" id="customerName" placeholder="客户公司名称" onfocus="selectLastHistory('customerName')" onchange="saveToHistory(this.value, 'customerName')"></div>
+                        <div class="col-md-4 mb-2"><label class="form-label">罐体材质</label><select class="form-select" id="tankMaterial" onfocus="selectLastHistory('tankMaterial')" onchange="saveToHistory(this.value, 'tankMaterial')"><option value="">请选择</option><option value="碳钢">碳钢</option><option value="不锈钢">不锈钢</option><option value="铝合金">铝合金</option></select></div>
+                    </div>
+                    <div class="mb-2"><label class="form-label">订单配置</label><input type="text" class="form-control" id="orderConfig" placeholder="如：标准配置、加强配置等" onfocus="selectLastHistory('orderConfig')" onchange="saveToHistory(this.value, 'orderConfig')"></div>
+                    <button type="submit" class="btn btn-primary">提交订单</button>
+                    <button type="reset" class="btn btn-outline-secondary">重置</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 历史记录下拉弹窗 -->
+        <div id="historyDropdown" class="modal-overlay" style="z-index: 10000;">
+            <div class="modal-box" style="max-width: 400px; max-height: 300px; overflow-y: auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <h6 style="margin:0;" id="historyDropdownTitle">历史记录</h6>
+                    <span style="cursor:pointer;font-size:24px;line-height:1;" onclick="closeHistoryDropdown()">×</span>
+                </div>
+                <hr>
+                <div id="historyDropdownContent"></div>
+            </div>
+        </div>
+
+        <div id="production" class="tab-content">
+            <div class="content-card">
+                <h4>生产排产 <button class="btn btn-success btn-sm float-end me-2" onclick="autoSchedule()">自动排产</button><button class="btn btn-info btn-sm float-end me-2" onclick="exportOrders()">导出</button></h4>
+                <div class="row mb-2">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="prodSearchOrderNo" placeholder="输入订单号搜索">
+                            <button class="btn btn-primary" type="button" onclick="searchProduction()">搜索</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="prodSearchResult" class="mb-2" style="display:none;"></div>
+                <table class="table table-sm table-hover" id="productionTable"><thead><tr><th>排序</th><th>订单号</th><th>优先</th><th>罐体容积</th><th>车辆类型</th><th>底盘到厂时间</th><th>交付日期</th><th>进度</th><th>当前工序</th><th>操作</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+
+        <div id="list" class="tab-content">
+            <div class="content-card">
+                <h4>订单列表 <button class="btn btn-success btn-sm float-end" onclick="exportOrders()">导出Excel</button></h4>
+                <table class="table table-sm table-hover" id="ordersTable"><thead><tr><th>序号</th><th>订单号</th><th>优先</th><th>罐体容积</th><th>车辆类型</th><th>订单配置</th><th>罐体材质</th><th>客户</th><th>数量</th><th>底盘到厂时间</th><th>下单时间</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+
+        <div id="daily" class="tab-content">
+            <div class="content-card">
+                <h4>每日通报 <button class="btn btn-primary btn-sm float-end me-2" onclick="clearDailyReport()">清空</button><button class="btn btn-success btn-sm float-end" onclick="saveDailyReport()">保存</button></h4>
+                <div class="mb-3">
+                    <label class="form-label">粘贴微信群里的通报内容：</label>
+                    <textarea class="form-control" id="dailyInput" rows="6" placeholder="如：5-45二装、4-79吊、开油漆、二装完工、附件完工、装配完工、探伤、罐体完工、入库、油漆完工、发车等"></textarea>
+                </div>
+                <button class="btn btn-info mb-3" onclick="analyzeDailyReport()">分析汇总</button>
+                <div id="dailyReportResult"></div>
+            </div>
+        </div>
+
+        <div id="deleted" class="tab-content">
+            <div class="content-card">
+                <h4>已删除订单 <button class="btn btn-primary btn-sm float-end" onclick="restoreAllDeleted()">批量恢复</button></h4>
+                <table class="table table-sm table-hover" id="deletedTable"><thead><tr><th>订单号</th><th>产品型号</th><th>数量</th><th>删除时间</th><th>操作人</th><th>操作</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+    </div>
+
+    <div id="processModal" class="modal-overlay">
+        <div class="modal-box">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h5 style="margin:0;">工序跟踪 - <span id="modalOrderNo"></span></h5>
+                <span style="cursor:pointer;font-size:24px;line-height:1;" onclick="closeModal()">×</span>
+            </div>
+            <hr>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>工序进度</h6>
+                    <div id="processTracker"></div>
+                </div>
+                <div class="col-md-6">
+                    <h6>订单信息</h6>
+                    <div id="orderInfo"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 共享登录/设置弹窗 -->
+    <div id="shareModal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 400px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h5 style="margin:0;" id="shareModalTitle">共享登录</h5>
+                <span style="cursor:pointer;font-size:24px;line-height:1;" onclick="closeShareModal()">×</span>
+            </div>
+            <hr>
+            <div id="shareLoginForm">
+                <div class="mb-3">
+                    <label class="form-label">请输入共享密码：</label>
+                    <input type="password" class="form-control" id="sharePassword" placeholder="输入共享密码">
+                </div>
+                <button class="btn btn-primary w-100" onclick="doShareLogin()">登录</button>
+            </div>
+            <div id="shareSettingsForm" style="display:none;">
+                <div class="mb-3">
+                    <label class="form-label">设置共享密码：</label>
+                    <input type="password" class="form-control" id="newSharePassword" placeholder="输入新密码（4-20位）">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">确认密码：</label>
+                    <input type="password" class="form-control" id="confirmSharePassword" placeholder="再次输入密码">
+                </div>
+                <button class="btn btn-primary w-100 mb-2" onclick="saveSharePassword()">保存密码</button>
+                <button class="btn btn-outline-secondary w-100" onclick="clearSharePassword()">清空密码（关闭共享）</button>
+            </div>
+            <div class="alert alert-info mt-2 small">
+                <strong>说明：</strong>设置共享密码后，输入密码即可进入编辑模式。<br>
+                <strong>WPS共享方案：</strong>将HTML文件放到WPS云文档的共享文件夹中，所有人通过共享链接打开，每次手动点击"刷新"获取最新数据。<br>
+                <strong>实时同步：</strong>将文件放到局域网共享文件夹（如\\192.168.1.x\共享\），所有人访问该路径可实现自动同步。
+            </div>
+            <!-- 云端同步设置 -->
+            <div class="mt-3 pt-3 border-top">
+                <h6 class="text-primary mb-2">☁️ 云端数据同步</h6>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="cloudEnabled" onchange="saveCloudConfig()">
+                    <label class="form-check-label" for="cloudEnabled">启用云端同步</label>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">JSONBin API Key:</label>
+                    <input type="text" class="form-control form-control-sm" id="cloudApiKey" placeholder="请输入 API Key" onchange="saveCloudConfig()">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">JSONBin Bin ID:</label>
+                    <input type="text" class="form-control form-control-sm" id="cloudBinId" placeholder="请输入 Bin ID" onchange="saveCloudConfig()">
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="testCloudConnection()">测试连接</button>
+                    <button class="btn btn-success btn-sm" onclick="loadFromCloud()">立即同步</button>
+                </div>
+                <div class class="d-flex gap-2" style="margin-bottom:10px;">
+                        <mb-2">
+                    </div>="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    var PROCESSES = ['图纸','下料','卷筒','包罐','探伤','罐体完工','底漆','一装配','面漆','二装配','补漆入库','完工'];
+    var orders = [];
+    var isSharedMode = false;
+
+    function init() {
+        orders = JSON.parse(localStorage.getItem('tankOrders')) || [];
+        initTabs();
+        initYearSelector();
+        updateDashboard();
+        loadOrders();
+        loadProduction();
+        loadDeletedOrders();
+        loadDailyReport();
+        document.getElementById('orderForm').onsubmit = handleSubmit;
+        setDefaultOrderTime();
+        migrateData();
+        checkSharedLogin();
+        startSyncPolling();
+        loadFormHistory(); // 加载表单历史记录
+        
+        // 监听其他标签页的数据变化
+        window.addEventListener('storage', function(e) {
+            if(e.key === 'tankOrders' && isSharedMode) {
+                orders = JSON.parse(e.newValue) || [];
+                updateDashboard();
+                loadOrders();
+                loadProduction();
+                loadDeletedOrders();
+            }
+            if(e.key === 'sharePassword' && e.newValue === null) {
+                logoutShare();
+            }
+        });
+    }
+    
+    // ===== 表单历史记录功能 =====
+    var formHistory = {}; // 历史记录存储
+    var currentHistoryField = ''; // 当前显示历史的字段
+    
+    // 加载历史记录
+    function loadFormHistory() {
+        try {
+            formHistory = JSON.parse(localStorage.getItem('formHistory')) || {};
+        } catch(e) {
+            formHistory = {};
+        }
+        // 自动填充上次的值
+        setLastUsedValues();
+        
+        // 点击其他地方关闭历史记录下拉框
+        document.addEventListener('click', function(e) {
+            var dropdown = document.getElementById('historyDropdown');
+            if(dropdown.classList.contains('show')) {
+                var isClickInside = dropdown.contains(e.target) || e.target.closest('.form-control') || e.target.closest('.form-select');
+                if(!isClickInside) {
+                    closeHistoryDropdown();
+                }
+            }
+        });
+    }
+    
+    // 保存到历史记录
+    function saveToHistory(value, field) {
+        if(!value || !field) return;
+        if(!formHistory[field]) {
+            formHistory[field] = [];
+        }
+        // 避免重复添加
+        var idx = formHistory[field].indexOf(value);
+        if(idx > -1) {
+            formHistory[field].splice(idx, 1);
+        }
+        // 添加到最前面
+        formHistory[field].unshift(value);
+        // 最多保留20条
+        if(formHistory[field].length > 20) {
+            formHistory[field].pop();
+        }
+        // 保存到localStorage
+        localStorage.setItem('formHistory', JSON.stringify(formHistory));
+    }
+    
+    // 显示历史记录下拉框
+    function showHistoryDropdown(element, field) {
+        currentHistoryField = field;
+        var history = formHistory[field] || [];
+        
+        if(history.length === 0) {
+            closeHistoryDropdown();
+            return;
+        }
+        
+        var titleMap = {
+            'productModel': '历史产品型号',
+            'tankVolume': '历史罐体容积',
+            'vehicleType': '历史车辆类型',
+            'priority': '历史优先等级',
+            'operator': '历史操作人员',
+            'customerName': '历史客户',
+            'tankMaterial': '历史罐体材质',
+            'orderConfig': '历史订单配置'
+        };
+        
+        document.getElementById('historyDropdownTitle').innerText = titleMap[field] || '历史记录';
+        
+        var html = '';
+        // 显示最近使用的值（最多10条）
+        for(var i = 0; i < Math.min(history.length, 10); i++) {
+            html += '<div class="history-item" style="padding:8px;cursor:pointer;border-bottom:1px solid #eee;" onclick="selectHistoryValue(\'' + history[i].replace(/'/g, "\\'") + '\')">' + history[i] + '</div>';
+        }
+        
+        // 添加清空历史按钮
+        if(history.length > 0) {
+            html += '<div style="padding:8px;text-align:center;"><button class="btn btn-sm btn-outline-danger" onclick="clearHistory(\'' + field + '\')">清空历史</button></div>';
+        }
+        
+        document.getElementById('historyDropdownContent').innerHTML = html || '<div class="text-muted p-2">暂无历史记录</div>';
+        document.getElementById('historyDropdown').classList.add('show');
+    }
+    
+    // 选择历史值
+    function selectHistoryValue(value) {
+        if(!currentHistoryField) return;
+        
+        // 根据字段名找到对应的输入元素并赋值
+        var fieldMap = {
+            'productModel': 'productModel',
+            'tankVolume': 'tankVolumeInput',
+            'vehicleType': 'vehicleType',
+            'priority': 'priority',
+            'operator': 'operator',
+            'customerName': 'customerName',
+            'tankMaterial': 'tankMaterial',
+            'orderConfig': 'orderConfig'
+        };
+        
+        var elementId = fieldMap[currentHistoryField];
+        if(elementId) {
+            var el = document.getElementById(elementId);
+            if(el) el.value = value;
+        }
+        closeHistoryDropdown();
+    }
+    
+    // 关闭历史记录下拉框
+    function closeHistoryDropdown() {
+        document.getElementById('historyDropdown').classList.remove('show');
+    }
+    
+    // 清空指定字段的历史记录
+    function clearHistory(field) {
+        if(!confirm('确定要清空该字段的历史记录吗？')) return;
+        formHistory[field] = [];
+        localStorage.setItem('formHistory', JSON.stringify(formHistory));
+        showHistoryDropdown(null, field);
+    }
+    
+    // 点击字段时直接填充最近使用的历史值
+    function selectLastHistory(field) {
+        var history = formHistory[field] || [];
+        if(history.length === 0) return;
+        
+        var fieldMap = {
+            'productionOrderNo': 'productionOrderNo',
+            'productModel': 'productModel',
+            'tankVolume': 'tankVolumeInput',
+            'chassisDate': 'chassisDate',
+            'vehicleType': 'vehicleType',
+            'quantity': 'quantity',
+            'priority': 'priority',
+            'operator': 'operator',
+            'orderTime': 'orderTime',
+            'deliveryDate': 'deliveryDate',
+            'customerName': 'customerName',
+            'tankMaterial': 'tankMaterial',
+            'orderConfig': 'orderConfig'
+        };
+        
+        var elementId = fieldMap[field];
+        if(!elementId) return;
+        
+        var el = document.getElementById(elementId);
+        if(!el) return;
+        
+        // 只有当字段为空时才填充
+        if(!el.value) {
+            el.value = history[0];
+        }
+    }
+    
+    // 设置上次使用的值 - 所有字段自动填充
+    function setLastUsedValues() {
+        var fieldMap = {
+            'productionOrderNo': 'productionOrderNo',
+            'productModel': 'productModel',
+            'tankVolume': 'tankVolumeInput',
+            'chassisDate': 'chassisDate',
+            'vehicleType': 'vehicleType',
+            'quantity': 'quantity',
+            'priority': 'priority',
+            'operator': 'operator',
+            'orderTime': 'orderTime',
+            'deliveryDate': 'deliveryDate',
+            'customerName': 'customerName',
+            'tankMaterial': 'tankMaterial',
+            'orderConfig': 'orderConfig'
+        };
+        
+        var currentTab = document.querySelector('.tab-content.active');
+        if(!currentTab || currentTab.id !== 'orders') return; // 只在新增订单页面填充
+        
+        for(var field in fieldMap) {
+            var history = formHistory[field] || [];
+            if(history.length > 0) {
+                var el = document.getElementById(fieldMap[field]);
+                if(el && !el.value) {
+                    el.value = history[0];
+                }
+            }
+        }
+    }
+    
+    // 检查是否已登录
+    function checkSharedLogin() {
+        var storedPwd = localStorage.getItem('sharePassword');
+        if(storedPwd && localStorage.getItem('isSharedLoggedIn') === 'true') {
+            isSharedMode = true;
+            document.getElementById('loginArea').style.display = 'none';
+            document.getElementById('logoutArea').style.display = 'block';
+        } else {
+            document.getElementById('loginArea').style.display = 'block';
+            document.getElementById('logoutArea').style.display = 'none';
+        }
+    }
+    
+    // 显示共享登录
+    function showShareLogin() {
+        document.getElementById('shareModalTitle').innerText = '共享登录';
+        document.getElementById('shareLoginForm').style.display = 'block';
+        document.getElementById('shareSettingsForm').style.display = 'none';
+        document.getElementById('sharePassword').value = '';
+        document.getElementById('shareModal').style.display = 'block';
+    }
+    
+    // 显示设置
+    function showShareSettings() {
+        document.getElementById('shareModalTitle').innerText = '共享设置';
+        document.getElementById('shareLoginForm').style.display = 'none';
+        document.getElementById('shareSettingsForm').style.display = 'block';
+        document.getElementById('newSharePassword').value = '';
+        document.getElementById('confirmSharePassword').value = '';
+        document.getElementById('shareModal').style.display = 'block';
+    }
+    
+    // 关闭弹窗
+    function closeShareModal() {
+        document.getElementById('shareModal').style.display = 'none';
+    }
+    
+    // 执行登录
+    function doShareLogin() {
+        var pwd = document.getElementById('sharePassword').value;
+        var storedPwd = localStorage.getItem('sharePassword');
+        
+        if(!storedPwd) {
+            alert('请先在"设置"中设置共享密码！');
+            showShareSettings();
+            return;
+        }
+        
+        if(pwd === storedPwd) {
+            localStorage.setItem('isSharedLoggedIn', 'true');
+            isSharedMode = true;
+            closeShareModal();
+            checkSharedLogin();
+            alert('登录成功！已进入共享编辑模式。');
+        } else {
+            alert('密码错误！');
+        }
+    }
+    
+    // 保存共享密码
+    function saveSharePassword() {
+        var pwd = document.getElementById('newSharePassword').value;
+        var confirmPwd = document.getElementById('confirmSharePassword').value;
+        
+        if(pwd.length < 4 || pwd.length > 20) {
+            alert('密码长度需要4-20位！');
+            return;
+        }
+        
+        if(pwd !== confirmPwd) {
+            alert('两次输入的密码不一致！');
+            return;
+        }
+        
+        localStorage.setItem('sharePassword', pwd);
+        localStorage.setItem('isSharedLoggedIn', 'true');
+        isSharedMode = true;
+        closeShareModal();
+        checkSharedLogin();
+        alert('共享密码已设置，登录成功！');
+    }
+    
+    // 清空共享密码
+    function clearSharePassword() {
+        if(!confirm('确定要清空共享密码吗？清空后将无法使用共享登录功能。')) return;
+        localStorage.removeItem('sharePassword');
+        localStorage.removeItem('isSharedLoggedIn');
+        isSharedMode = false;
+        closeShareModal();
+        checkSharedLogin();
+        alert('共享密码已清空！');
+    }
+    
+    // 退出登录
+    function logoutShare() {
+        localStorage.setItem('isSharedLoggedIn', 'false');
+        isSharedMode = false;
+        checkSharedLogin();
+    }
+    
+    // 手动刷新数据
+    function refreshData() {
+        orders = JSON.parse(localStorage.getItem('tankOrders')) || [];
+        lastOrderHash = computeHash(orders);
+        updateDashboard();
+        loadOrders();
+        loadProduction();
+        loadDeletedOrders();
+        if(document.getElementById('warning').classList.contains('active')) {
+            updateWarningPanel();
+        }
+        // 显示刷新提示
+        var btn = event.target;
+        var originalText = btn.innerText;
+        btn.innerText = '已刷新';
+        setTimeout(function() { btn.innerText = originalText; }, 1000);
+    }
+    
+    // 跨浏览器标签页同步 - 使用轮询检查数据变化
+    var lastOrderHash = '';
+    
+    function computeHash(data) {
+        // 简单哈希用于检测变化
+        var str = JSON.stringify(data);
+        var hash = 0;
+        for(var i = 0; i < str.length; i++) {
+            var char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return hash.toString();
+    }
+    
+    function startSyncPolling() {
+        // 首次计算hash
+        lastOrderHash = computeHash(orders);
+        
+        // 每2秒检查一次数据变化
+        setInterval(function() {
+            if(!isSharedMode) return;
+            
+            // 重新从localStorage读取（可能其他标签页已修改）
+            var newData = JSON.parse(localStorage.getItem('tankOrders')) || [];
+            var newHash = computeHash(newData);
+            
+            // 如果hash不同，说明数据有变化
+            if(newHash !== lastOrderHash) {
+                lastOrderHash = newHash;
+                orders = newData;
+                updateDashboard();
+                loadOrders();
+                loadProduction();
+                loadDeletedOrders();
+                console.log('数据已同步');
+            }
+        }, 2000);
+    }
+    
+    // 修改save函数，保存后更新hash
+    var originalSave = save;
+    save = function() {
+        localStorage.setItem('tankOrders', JSON.stringify(orders));
+        lastOrderHash = computeHash(orders);
+    };
+
+    function migrateData() {
+        var changed = false;
+        for(var i = 0; i < orders.length; i++) {
+            var o = orders[i];
+            if(!o.processes) {
+                var p = {};
+                for(var j = 0; j < PROCESSES.length; j++) { p[PROCESSES[j]] = {status: 'pending', date: null}; }
+                o.processes = p;
+                o.currentProcess = o.currentProcess || '';
+                o.processProgress = o.processProgress || 0;
+                changed = true;
+            }
+            if(!o.priority) o.priority = '普通';
+            if(!o.orderConfig) o.orderConfig = '';
+            if(!o.operator) o.operator = '';
+            // 迁移：将旧状态转为"完成"
+            if(o.status === '已完成' || o.status === '已入库') {
+                o.status = '完成';
+                o.currentProcess = '完工';
+                changed = true;
+            }
+            // 如果订单已完成但工序过程为空，需要重建
+            if(o.status === '完成' && (!o.processes || Object.keys(o.processes).length === 0)) {
+                var p = {};
+                for(var j = 0; j < PROCESSES.length; j++) { p[PROCESSES[j]] = {status: 'done', date: new Date().toISOString()}; }
+                o.processes = p;
+                changed = true;
+            }
+        }
+        if(changed) save();
+    }
+    
+    // 每日通报功能
+    function loadDailyReport() {
+        var saved = localStorage.getItem('dailyReport');
+        if(saved) {
+            document.getElementById('dailyInput').value = saved;
+            analyzeDailyReport();
+        }
+    }
+    
+    function saveDailyReport() {
+        var content = document.getElementById('dailyInput').value;
+        localStorage.setItem('dailyReport', content);
+        alert('保存成功！');
+    }
+    
+    function clearDailyReport() {
+        if(!confirm('确定要清空每日通报内容吗？')) return;
+        document.getElementById('dailyInput').value = '';
+        document.getElementById('dailyReportResult').innerHTML = '';
+        localStorage.removeItem('dailyReport');
+    }
+    
+    function analyzeDailyReport() {
+        var content = document.getElementById('dailyInput').value;
+        if(!content.trim()) {
+            document.getElementById('dailyReportResult').innerHTML = '<div class="alert alert-warning">请先输入通报内容</div>';
+            return;
+        }
+        
+        // 解析内容
+        var lines = content.split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+        
+        // 定义工序关键词
+        var processKeywords = {
+            '图纸': ['图纸', '开图'],
+            '下料': ['下料', '开料'],
+            '卷筒': ['卷筒', '卷板'],
+            '包罐': ['包罐', '包板'],
+            '探伤': ['探伤'],
+            '罐体完工': ['罐体完工', '罐完'],
+            '底漆': ['底漆', '开油漆', '油漆'],
+            '一装配': ['一装配', '装配', '装配完工'],
+            '面漆': ['面漆'],
+            '二装配': ['二装配', '二装', '二装完工'],
+            '补漆入库': ['补漆', '补漆入库', '入库'],
+            '完工': ['完工', '完成'],
+            '发车': ['发车']
+        };
+        
+        // 统计结果
+        var stats = {};
+        var unparsed = [];
+        
+        // 初始化统计
+        for(var key in processKeywords) {
+            stats[key] = [];
+        }
+        stats['发车'] = [];
+        
+        // 解析每一行
+        for(var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var matched = false;
+            
+            // 检查是否包含单号（如5-45）
+            var orderMatch = line.match(/^(\d+-\d+)/);
+            var shortNo = orderMatch ? orderMatch[1] : null;
+            
+            // 转换为完整单号（如5-45 → XSHT26050045）
+            if(shortNo) {
+                var parts = shortNo.split('-');
+                var month = parts[0].padStart(2, '0');
+                var num = parts[1].padStart(3, '0');
+                var year = new Date().getFullYear().toString().slice(-2);
+                var fullNo = 'XSHT' + year + month + num;
+                shortNo = shortNo + '→' + fullNo;
+            }
+            
+            // 检查工序关键词
+            for(var proc in processKeywords) {
+                var keywords = processKeywords[proc];
+                for(var j = 0; j < keywords.length; j++) {
+                    if(line.indexOf(keywords[j]) !== -1) {
+                        if(orderNo) {
+                            stats[proc].push(orderNo);
+                        }
+                        matched = true;
+                        break;
+                    }
+                }
+                if(matched) break;
+            }
+            
+            if(!matched && line.length > 0) {
+                unparsed.push(line);
+            }
+        }
+        
+        // 去除重复
+        for(var proc in stats) {
+            stats[proc] = stats[proc].filter(function(v, i, a) { return a.indexOf(v) === i; });
+        }
+        
+        // 渲染结果
+        var html = '<div class="row">';
+        
+        // 各工序统计
+        var procList = ['图纸', '下料', '卷筒', '包罐', '探伤', '罐体完工', '底漆', '一装配', '面漆', '二装配', '补漆入库', '完工', '发车'];
+        var procColors = ['primary', 'secondary', 'info', 'warning', 'danger', 'success', 'dark', 'primary', 'info', 'warning', 'success', 'danger', 'success'];
+        
+        for(var i = 0; i < procList.length; i++) {
+            var proc = procList[i];
+            var count = stats[proc].length;
+            var color = procColors[i];
+            html += '<div class="col-md-3 col-sm-4 mb-2"><div class="card"><div class="card-header bg-' + color + ' text-white">' + proc + '</div><div class="card-body">';
+            if(count === 0) {
+                html += '<span class="text-muted">暂无</span>';
+            } else {
+                html += '<span class="badge bg-' + color + ' me-1">' + count + '单</span>';
+                html += '<small>' + stats[proc].join(', ') + '</small>';
+            }
+            html += '</div></div></div>';
+        }
+        
+        html += '</div>';
+        
+        // 未解析的内容
+        if(unparsed.length > 0) {
+            html += '<div class="alert alert-warning mt-3"><strong>未识别：</strong>' + unparsed.join(', ') + '</div>';
+        }
+        
+        // 汇总
+        var totalOrders = {};
+        for(var proc in stats) {
+            for(var j = 0; j < stats[proc].length; j++) {
+                var ono = stats[proc][j];
+                if(!totalOrders[ono]) totalOrders[ono] = [];
+                totalOrders[ono].push(proc);
+            }
+        }
+        
+        html += '<div class="alert alert-info mt-3"><strong>今日涉及订单：</strong>' + Object.keys(totalOrders).length + '个 (' + Object.keys(totalOrders).join(', ') + ')</div>';
+        
+        document.getElementById('dailyReportResult').innerHTML = html;
+    }
+
+    function initTabs() {
+        var links = document.querySelectorAll('.nav-link');
+        var pwdExpire = 60 * 60 * 1000; // 1小时有效期
+        
+        // 密码缓存，存储验证时间和标签
+        if(!window.pwdCache) {
+            window.pwdCache = {};
+        }
+        
+        for(var i = 0; i < links.length; i++) {
+            links[i].onclick = function(e) {
+                e.preventDefault();
+                var tabId = this.getAttribute('data-tab');
+                var pwd = null;
+                var correctPwd = null;
+                
+                // 不同标签页需要不同密码
+                if(tabId === 'orders' || tabId === 'warning') {
+                    // 新增订单和交付预警不需要密码
+                    correctPwd = null;
+                } else if(tabId === 'production') {
+                    correctPwd = '888';
+                } else if(tabId === 'list') {
+                    correctPwd = '999';
+                } else if(tabId === 'daily') {
+                    correctPwd = '888'; // 每日通报和生产排产用同一个密码
+                } else if(tabId === 'deleted') {
+                    correctPwd = '565656';
+                }
+                
+                // 需要密码的标签页，检查缓存是否有效
+                if(correctPwd) {
+                    var cached = window.pwdCache[tabId];
+                    var now = new Date().getTime();
+                    
+                    // 检查缓存是否有效（未过期）
+                    if(cached && cached.pwd === correctPwd && (now - cached.time) < pwdExpire) {
+                        // 缓存有效，无需再次验证
+                    } else {
+                        // 需要重新验证
+                        pwd = prompt('请输入管理密码：');
+                        if(pwd !== correctPwd) {
+                            alert('密码错误！');
+                            return;
+                        }
+                        // 更新缓存
+                        window.pwdCache[tabId] = { pwd: correctPwd, time: now };
+                    }
+                }
+                
+                document.querySelectorAll('.nav-link').forEach(function(l) { l.classList.remove('active'); });
+                this.classList.add('active');
+                document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+                document.getElementById(tabId).classList.add('active');
+                // 切换到预警tab时刷新数据
+                if(tabId === 'warning') {
+                    updateWarningPanel();
+                }
+            };
+        }
+    }
+
+    function setDefaultOrderTime() {
+        var now = new Date();
+        var offset = now.getTimezoneOffset() * 60000;
+        document.getElementById('orderTime').value = new Date(now.getTime() - offset).toISOString().slice(0, 16);
+    }
+
+    function save() { localStorage.setItem('tankOrders', JSON.stringify(orders)); }
+
+    function generateOrderNo() {
+        var d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        var c = 0;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].productionOrderNo && orders[i].productionOrderNo.indexOf(d) !== -1) c++; }
+        return 'PO-' + d + '-' + String(c + 1).padStart(3, '0');
+    }
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        // 保存表单字段到历史记录（所有字段）
+        var fieldsToSave = [
+            {id: 'productionOrderNo', key: 'productionOrderNo'},
+            {id: 'productModel', key: 'productModel'},
+            {id: 'tankVolumeInput', key: 'tankVolume'},
+            {id: 'chassisDate', key: 'chassisDate'},
+            {id: 'vehicleType', key: 'vehicleType'},
+            {id: 'quantity', key: 'quantity'},
+            {id: 'priority', key: 'priority'},
+            {id: 'operator', key: 'operator'},
+            {id: 'orderTime', key: 'orderTime'},
+            {id: 'deliveryDate', key: 'deliveryDate'},
+            {id: 'customerName', key: 'customerName'},
+            {id: 'tankMaterial', key: 'tankMaterial'},
+            {id: 'orderConfig', key: 'orderConfig'}
+        ];
+        
+        // 保存每个字段的值到历史记录
+        for(var i = 0; i < fieldsToSave.length; i++) {
+            var f = fieldsToSave[i];
+            var val = document.getElementById(f.id).value;
+            if(val) saveToHistory(val, f.key);
+        }
+        
+        var p = {};
+        for(var i = 0; i < PROCESSES.length; i++) { p[PROCESSES[i]] = {status: 'pending', date: null}; }
+        var orderNo = document.getElementById('productionOrderNo').value;
+        if(!orderNo) orderNo = generateOrderNo();
+        var o = {
+            id: Date.now(), productionOrderNo: orderNo,
+            operator: document.getElementById('operator').value,
+            customerName: document.getElementById('customerName').value,
+            productModel: document.getElementById('productModel').value,
+            tankMaterial: document.getElementById('tankMaterial').value,
+            tankVolume: document.getElementById('tankVolumeInput').value,
+            chassisDate: document.getElementById('chassisDate').value,
+            vehicleType: document.getElementById('vehicleType').value,
+            quantity: parseInt(document.getElementById('quantity').value) || 1,
+            priority: document.getElementById('priority').value,
+            orderTime: document.getElementById('orderTime').value,
+            deliveryDate: document.getElementById('deliveryDate').value,
+            orderConfig: document.getElementById('orderConfig').value,
+            status: '待生产', processes: p, currentProcess: '', processProgress: 0, scheduleOrder: 0,
+            createdAt: new Date().toISOString()
+        };
+        orders.push(o);
+        save();
+        alert('订单提交成功！');
+        
+        // 记住常用字段的值（操作人员、客户、罐体材质等）
+        var fieldsToKeep = ['operator', 'customerName', 'tankMaterial', 'orderConfig', 'vehicleType', 'priority'];
+        var keepValues = {};
+        for(var i = 0; i < fieldsToKeep.length; i++) {
+            keepValues[fieldsToKeep[i]] = document.getElementById(fieldsToKeep[i]).value;
+        }
+        
+        e.target.reset();
+        
+        // 恢复常用字段的值
+        for(var i = 0; i < fieldsToKeep.length; i++) {
+            if(keepValues[fieldsToKeep[i]]) {
+                document.getElementById(fieldsToKeep[i]).value = keepValues[fieldsToKeep[i]];
+            }
+        }
+        
+        setDefaultOrderTime();
+        updateDashboard();
+        loadOrders();
+        loadProduction();
+        updateDashboard();
+    }
+
+    function autoSchedule() {
+        var po = {'紧急': 0, '加急': 1, '普通': 2};
+        var ps = orders.filter(function(o) { return (o.status === '待生产' || o.status === '生产中') && o.status !== '已删除'; });
+        ps.sort(function(a, b) { if(po[a.priority] !== po[b.priority]) return po[a.priority] - po[b.priority]; return new Date(a.createdAt) - new Date(b.createdAt); });
+        for(var i = 0; i < ps.length; i++) {
+            ps[i].scheduleOrder = i + 1;
+            if(ps[i].status === '待生产' && ps[i].scheduleOrder === 1 && !ps[i].currentProcess) {
+                ps[i].status = '生产中';
+                ps[i].currentProcess = '图纸';
+                ps[i].processes['图纸'].status = 'done';
+                ps[i].processes['图纸'].date = new Date().toISOString();
+                ps[i].processProgress = Math.round((1 / PROCESSES.length) * 100);
+            }
+        }
+        save();
+        loadProduction();
+        updateDashboard();
+        alert('自动排产完成！');
+    }
+
+    function loadProduction() {
+        var ps = orders.filter(function(o) { return (o.status === '待生产' || o.status === '生产中') && o.status !== '已删除'; });
+        ps.sort(function(a, b) { 
+        var po = {'紧急': 0, '加急': 1, '普通': 2};
+        var pa = po[a.priority] !== undefined ? po[a.priority] : 2;
+        var pb = po[b.priority] !== undefined ? po[b.priority] : 2;
+        if(pa !== pb) return pa - pb;
+        return a.scheduleOrder - b.scheduleOrder; 
+    });
+        var tb = document.querySelector('#productionTable tbody');
+        if(ps.length === 0) { tb.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无待生产订单</td></tr>'; return; }
+        var html = '';
+        for(var i = 0; i < ps.length; i++) {
+            var o = ps[i];
+            var pg = o.processProgress || 0;
+            var c = pg < 30 ? 'bg-warning' : pg < 70 ? 'bg-info' : 'bg-success';
+            html += '<tr><td>' + (i + 1) + '</td><td><strong>' + o.productionOrderNo + '</strong></td><td><select class="form-select form-select-sm" onchange="changeProductionPriority(' + o.id + ', this.value)"><option value="普通" ' + (o.priority === '普通' ? 'selected' : '') + '>普通</option><option value="加急" ' + (o.priority === '加急' ? 'selected' : '') + '>加急</option><option value="紧急" ' + (o.priority === '紧急' ? 'selected' : '') + '>紧急</option></select>' + '</td><td>' + (o.tankVolume || '-') + '</td><td>' + (o.vehicleType || '-') + '</td><td>' + '<input type="date" class="form-control form-control-sm" value="' + (o.chassisDate || '') + '" onchange="updateChassisDate(' + o.id + ', this.value)">' + '</td><td>' + (o.deliveryDate || '-') + '</td><td><div class="progress" style="height:18px;min-width:60px"><div class="progress-bar ' + c + '" style="width:' + pg + '%">' + pg + '%</div></div></td><td>' + (o.currentProcess || '未开始') + '</td><td><button class="btn btn-primary btn-sm me-1" onclick="openPM(' + o.id + ')">工序</button><button class="btn btn-danger btn-sm" onclick="deleteOrder(' + o.id + ')">删除</button></td></tr>';
+        }
+        tb.innerHTML = html;
+    }
+    
+    // 搜索生产排产中的订单
+    function searchProduction() {
+        var searchNo = document.getElementById('prodSearchOrderNo').value.trim();
+        var resultDiv = document.getElementById('prodSearchResult');
+        
+        if(!searchNo) {
+            resultDiv.style.display = 'none';
+            loadProduction();
+            return;
+        }
+        
+        var ps = orders.filter(function(o) { return (o.status === '待生产' || o.status === '生产中') && o.status !== '已删除'; });
+        
+        // 模糊匹配
+        var found = ps.filter(function(o) { 
+            return o.productionOrderNo && o.productionOrderNo.toLowerCase().indexOf(searchNo.toLowerCase()) !== -1;
+        });
+        
+        if(found.length === 0) {
+            resultDiv.innerHTML = '<div class="alert alert-warning">未找到订单号包含"' + searchNo + '"的生产订单</div>';
+            resultDiv.style.display = 'block';
+            return;
+        }
+        
+        var html = '<div class="alert alert-info"><strong>查询结果：</strong>找到 ' + found.length + ' 个订单</div><table class="table table-sm table-bordered"><thead><tr><th>序号</th><th>订单号</th><th>优先</th><th>罐体容积</th><th>车辆类型</th><th>底盘到厂时间</th><th>进度</th><th>当前工序</th><th>优先级调整</th><th>操作</th></tr></thead><tbody>';
+        
+        found.sort(function(a, b) { return a.scheduleOrder - b.scheduleOrder; });
+        
+        for(var i = 0; i < found.length; i++) {
+            var o = found[i];
+            var pg = o.processProgress || 0;
+            html += '<tr><td>' + (i + 1) + '</td><td><strong>' + o.productionOrderNo + '</strong></td><td>' + badge(o.priority) + '</td><td>' + (o.tankVolume || '-') + '</td><td>' + (o.vehicleType || '-') + '</td><td><input type="date" class="form-control form-control-sm" value="' + (o.chassisDate || '') + '" onchange="updateChassisDate(' + o.id + ', this.value)"></td><td>' + pg + '%</td><td>' + (o.currentProcess || '未开始') + '</td><td><select class="form-select form-select-sm" onchange="changePriority(' + o.id + ', this.value)"><option value="普通" ' + (o.priority === '普通' ? 'selected' : '') + '>普通</option><option value="加急" ' + (o.priority === '加急' ? 'selected' : '') + '>加急</option><option value="紧急" ' + (o.priority === '紧急' ? 'selected' : '') + '>紧急</option></select></td><td><button class="btn btn-primary btn-sm" onclick="openPM(' + o.id + ')">查看</button></td></tr>';
+        }
+        
+        html += '</tbody></table>';
+        resultDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+    }
+    
+    
+    
+    // 生产排产页面修改优先等级
+    function changeProductionPriority(id, newPriority) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        
+        o.priority = newPriority;
+        save();
+        
+        // 重新加载生产排产列表（保持排序）
+        loadProduction();
+        loadOrders();
+        updateDashboard();
+    }
+    // 更新底盘到厂时间
+    function updateChassisDate(id, newDate) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        
+        o.chassisDate = newDate;
+        save();
+        
+        // 如果有搜索结果，更新搜索结果
+        var resultDiv = document.getElementById('prodSearchResult');
+        if(resultDiv && (resultDiv.style.display === "block" || resultDiv.innerHTML.trim() !== "")) {
+            searchProduction();
+        }
+        loadProduction();
+        loadOrders();
+        updateDashboard();
+    }
+    
+    // 订单列表更新底盘到厂时间
+    function updateOrderChassisDate(id, newDate) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        
+        o.chassisDate = newDate;
+        save();
+        
+        
+        // 搜索结果中显示时需要同步刷新
+        var resultDiv = document.getElementById('prodSearchResult');
+        if(resultDiv && (resultDiv.style.display === 'block' || resultDiv.innerHTML.trim() !== '')) {
+            searchProduction();
+        }
+
+        loadOrders();
+        loadProduction();
+        updateDashboard();
+    }
+    
+    // 调整订单优先级
+    function changePriority(id, newPriority) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        
+        o.priority = newPriority;
+        save();
+        
+        // 如果有搜索结果，更新搜索结果
+        var resultDiv = document.getElementById('prodSearchResult');
+        if(resultDiv && (resultDiv.style.display === "block" || resultDiv.innerHTML.trim() !== "")) {
+            searchProduction();
+        }
+        
+        // 更新生产列表
+        loadProduction();
+        loadOrders();
+        // 更新仪表盘数据
+        updateDashboard();
+    }
+    
+    // 回车搜索
+    document.addEventListener('keypress', function(e) {
+        if(e.key === 'Enter' && document.activeElement.id === 'prodSearchOrderNo') {
+            searchProduction();
+        }
+    });
+
+    function openPM(id) {
+        // 密码检查 - 有效期1小时
+        var correctPwd = '666';
+        var now = new Date().getTime();
+        var pwdExpire = 60 * 60 * 1000;
+        
+        if(!window.pwdCache) window.pwdCache = {};
+        var cached = window.pwdCache['processModal'];
+        
+        if(!cached || cached.pwd !== correctPwd || (now - cached.time) > pwdExpire) {
+            var pwd = prompt('请输入管理密码：');
+            if(pwd !== correctPwd) {
+                alert('密码错误！');
+                return;
+            }
+            window.pwdCache['processModal'] = { pwd: correctPwd, time: now };
+        }
+        
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) { alert('订单不存在'); return; }
+        
+        document.getElementById('modalOrderNo').innerText = o.productionOrderNo;
+        
+        var html = '';
+        for(var i = 0; i < PROCESSES.length; i++) {
+            var p = PROCESSES[i];
+            var done = o.processes && o.processes[p] && o.processes[p].status === 'done';
+            var act = o.currentProcess === p && !done;
+            // 手动模式：找出下一道可以开始的工序
+            var canStart = false;
+            // 当currentProcess为空，处于待生产状态，第一道工序图纸可以开始
+            if(!done && !act && !o.currentProcess && p === '图纸') canStart = true;
+            // 当currentProcess已设置时，判断下一道工序
+            if(!done && !act && o.currentProcess && o.currentProcess !== '完工') {
+                var currIdx = PROCESSES.indexOf(o.currentProcess);
+                if(currIdx >= 0 && i === currIdx + 1) canStart = true;
+            }
+            // 补漆入库后可开始完工工序
+            if(!done && !act && p === '完工') {
+                if(o.processes && o.processes['补漆入库'] && o.processes['补漆入库'].status === 'done') {
+                    canStart = true;
+                }
+            }
+            var btn = '';
+            if(done) btn = '<span class="badge bg-success">已完成</span>';
+            else if(act) btn = '<button class="btn btn-success btn-sm" onclick="compP(' + o.id + ',\'' + p + '\')">完成</button>';
+            else if(canStart) btn = '<button class="btn btn-primary btn-sm" onclick="startP(' + o.id + ',\'' + p + '\')">开始</button>';
+            else btn = '<span class="badge bg-secondary">待处理</span>';
+            
+            // 完工工序：可以直接点击完成整个订单
+            if(p === '完工' && o.status !== '完成') {
+                btn = '<button class="btn btn-success btn-sm" onclick="startP(' + o.id + ',\'' + p + '\')">完成订单</button>';
+            }
+            if(p === '完工' && o.status === '完成') {
+                btn = '<span class="badge bg-success">已完成</span>';
+            }
+            
+            // 补漆入库工序完成后的状态显示
+            if(p === '补漆入库' && done) {
+                btn = '<span class="badge bg-success">已入库</span>';
+            }
+            var dt = o.processes[p].date ? new Date(o.processes[p].date).toLocaleString('zh-CN') : '';
+            html += '<div class="process-item ' + (done ? 'done' : '') + ' ' + (act ? 'active' : '') + '"><div class="process-row"><strong>' + p + '</strong>' + (dt ? '<small class="text-muted">' + dt + '</small>' : '') + '</div><div>' + btn + '</div></div>';
+        }
+        document.getElementById('processTracker').innerHTML = html;
+        
+        var infoHtml = '<table class="table table-sm"><tr><td>操作人员</td><td>' + (o.operator || '-') + '</td></tr><tr><td>产品型号</td><td>' + (o.productModel || '-') + '</td></tr><tr><td>订单配置</td><td>' + (o.orderConfig || '-') + '</td></tr><tr><td>罐体材质</td><td>' + (o.tankMaterial || '-') + '</td></tr><tr><td>罐体容积</td><td>' + (o.tankVolume || '-') + '</td></tr><tr><td>车辆类型</td><td>' + (o.vehicleType || '-') + '</td></tr><tr><td>数量</td><td>' + o.quantity + '</td></tr><tr><td>客户</td><td>' + (o.customerName || '-') + '</td></tr><tr><td>优先等级</td><td>' + badge(o.priority) + '</td></tr><tr><td>交付日期</td><td>' + (o.deliveryDate || '-') + '</td></tr></table>';
+        document.getElementById('orderInfo').innerHTML = infoHtml;
+        
+        document.getElementById('processModal').style.display = 'block';
+    }
+
+    function closeModal() { document.getElementById('processModal').style.display = 'none'; }
+
+    function compP(oid, proc) {
+        console.log('compP called:', oid, proc);
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === oid) { o = orders[i]; break; } }
+        if(!o) { alert('订单不存在'); return; }
+        var idx = PROCESSES.indexOf(proc);
+        o.processes[proc].status = 'done';
+        o.processes[proc].date = new Date().toISOString();
+        // 进度按全部工序计算
+        o.processProgress = Math.round(((idx + 1) / PROCESSES.length) * 100);
+        
+        // 手动模式：完成后不自动流转，需要手动开始下一道
+        if(idx < PROCESSES.length - 1) {
+            // 保持当前工序不变，下一道需要手动开始
+            o.status = '生产中';
+        } else {
+            // 完工工序完成 = 订单完成
+            o.currentProcess = '完工';
+            o.status = '完成';
+        }
+        save();
+        openPM(oid);
+        loadProduction();
+        updateDashboard();
+    }
+    
+    // 入库操作
+    function warehouseOrder(oid) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === oid) { o = orders[i]; break; } }
+        if(!o) return;
+        if(!confirm('确定要将订单 ' + o.productionOrderNo + ' 入库吗？')) return;
+        o.status = '完成';
+        o.warehousedAt = new Date().toISOString();
+        save();
+        openPM(oid);
+        loadProduction();
+        updateDashboard();
+        alert('入库成功！');
+    }
+    
+    // 出库操作（从已入库转为生产中）
+    function unwarehouseOrder(oid) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === oid) { o = orders[i]; break; } }
+        if(!o) return;
+        if(!confirm('确定要取消入库吗？')) return;
+        o.status = '生产中';
+        o.warehousedAt = null;
+        save();
+        openPM(oid);
+        loadProduction();
+        updateDashboard();
+    }
+
+    function startP(oid, proc) {
+        console.log('startP called:', oid, proc);
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === oid) { o = orders[i]; break; } }
+        if(!o) { alert('订单不存在'); return; }
+        
+        // 完工工序：直接标记整个订单完成
+        if(proc === '完工') {
+            // 标记所有工序完成
+            for(var j = 0; j < PROCESSES.length; j++) {
+                if(o.processes[PROCESSES[j]] && o.processes[PROCESSES[j]].status !== 'done') {
+                    o.processes[PROCESSES[j]].status = 'done';
+                    o.processes[PROCESSES[j]].date = new Date().toISOString();
+                }
+            }
+            o.currentProcess = '完工';
+            o.status = '完成';
+            o.processProgress = 100;
+            save();
+            openPM(oid);
+            loadProduction();
+            updateDashboard();
+            return;
+        }
+        
+        // 补漆入库工序：完成入库
+        if(proc === '补漆入库') {
+            o.currentProcess = '完工';
+            o.status = '完成';
+            o.warehousedAt = new Date().toISOString();
+            o.processes[proc].status = 'done';
+            o.processes[proc].date = new Date().toISOString();
+            o.processProgress = 100;
+            save();
+            openPM(oid);
+            loadProduction();
+            updateDashboard();
+            return;
+        }
+        
+        o.status = '生产中';
+        o.currentProcess = proc;
+        o.processes[proc].status = 'done';
+        o.processes[proc].date = new Date().toISOString();
+        // 计算当前已完成工序的数量来确定进度（不计算"完工"）
+        var doneCount = 0;
+        for(var j = 0; j < PROCESSES.length; j++) {
+            if(o.processes[PROCESSES[j]] && o.processes[PROCESSES[j]].status === 'done') doneCount++;
+        }
+        o.processProgress = Math.round((doneCount / PROCESSES.length) * 100);
+        save();
+        openPM(oid);
+        loadProduction();
+        updateDashboard();
+    }
+
+    function deleteOrder(id) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        if(!confirm('确定要删除订单 ' + o.productionOrderNo + ' 吗？')) return;
+        o.deletedAt = new Date().toISOString();
+        o.status = '已删除';
+        o.currentProcess = '';
+        save();
+        updateDashboard();
+        loadOrders();
+        loadProduction();
+        loadDeletedOrders();
+        alert('订单已删除');
+    }
+
+    function badge(p) { var c = {'紧急': 'bg-danger', '加急': 'bg-warning', '普通': 'bg-secondary'}; return '<span class="badge ' + (c[p] || 'bg-secondary') + '">' + (p || '普通') + '</span>'; }
+    function statusClass(s) { var m = {'待生产': 'pending', '生产中': 'producing', '完成': 'completed'}; return m[s] || 'pending'; }
+
+    // 初始化年份选择器
+    function initYearSelector() {
+        var y = document.getElementById('statsYear');
+        if(!y) return;
+        var currentYear = new Date().getFullYear();
+        var years = [currentYear - 1, currentYear, currentYear + 1];
+        var html = '';
+        for(var i = 0; i < years.length; i++) {
+            html += '<option value="' + years[i] + '" ' + (years[i] === currentYear ? 'selected' : '') + '>' + years[i] + '年</option>';
+        }
+        y.innerHTML = html;
+    }
+
+    function updateDashboard() {
+        // 强制数据一致性检查
+        var changed = false;
+        for(var i = 0; i < orders.length; i++) {
+            var o = orders[i];
+            // 旧状态迁移
+            if(o.status === '已完成' || o.status === '已入库') {
+                o.status = '完成';
+                o.currentProcess = '完工';
+                changed = true;
+            }
+            // currentProcess 是"完工"，状态必须是"完成"
+            if(o.currentProcess === '完工' && o.status !== '完成') {
+                o.status = '完成';
+                changed = true;
+            }
+            // 状态是"完成"，currentProcess 必须是"完工"
+            if(o.status === '完成' && o.currentProcess !== '完工') {
+                o.currentProcess = '完工';
+                changed = true;
+            }
+            // 重建工序数据（当工序列表变更时）
+            if(o.processes) {
+                var oldKeys = Object.keys(o.processes);
+                var needsRebuild = false;
+                for(var k = 0; k < oldKeys.length; k++) {
+                    if(PROCESSES.indexOf(oldKeys[k]) === -1) {
+                        needsRebuild = true;
+                        break;
+                    }
+                }
+                if(needsRebuild) {
+                    var p = {};
+                    var existingDone = [];
+                    // 保留已完成的工序
+                    for(var j = 0; j < PROCESSES.length; j++) {
+                        if(o.processes[PROCESSES[j]] && o.processes[PROCESSES[j]].status === 'done') {
+                            existingDone.push(PROCESSES[j]);
+                        }
+                        p[PROCESSES[j]] = {status: 'pending', date: null};
+                    }
+                    // 标记之前已完成的工序
+                    for(var d = 0; d < existingDone.length; d++) {
+                        p[existingDone[d]] = {status: 'done', date: new Date().toISOString()};
+                    }
+                    if(o.status === '完成') {
+                        for(var j = 0; j < PROCESSES.length; j++) {
+                            p[PROCESSES[j]] = {status: 'done', date: new Date().toISOString()};
+                        }
+                    }
+                    o.processes = p;
+                    changed = true;
+                }
+            }
+        }
+        if(changed) save();
+        
+        // 同步所有订单的状态和当前工序
+        for(var i = 0; i < orders.length; i++) {
+            var o = orders[i];
+            if(o.status === '生产中' && o.currentProcess) {
+                // 状态是生产中，确保currentProcess有值
+            } else if(o.status === '待生产' && o.currentProcess && o.currentProcess !== '待生产') {
+                // 待生产状态，清空当前工序
+                o.currentProcess = '';
+            } else if(o.status === '完成' && o.currentProcess !== '完工') {
+                // 完工状态，当前工序设为完工
+                o.currentProcess = '完工';
+            }
+        }
+        save();
+        
+        var activeOrders = orders.filter(function(o) { return o.status !== '已删除'; });
+        var t = activeOrders.length, pd = 0, pg = 0, cm = 0, wh = 0;
+        for(var i = 0; i < activeOrders.length; i++) {
+            if(activeOrders[i].status === '待生产') pd++;
+            if(activeOrders[i].status === '生产中') pg++;
+            if(activeOrders[i].status === '完成') cm++;
+            if(activeOrders[i].status === '完成') wh++; // 完成 = 已入库
+        }
+        document.getElementById('totalOrders').innerText = t;
+        document.getElementById('pendingOrders').innerText = pd;
+        document.getElementById('producingOrders').innerText = pg;
+        document.getElementById('completedOrders').innerText = cm;
+        document.getElementById('warehousedOrders').innerText = wh;
+        
+        // 获取选择的年份
+        var yearSelect = document.getElementById('statsYear');
+        var selectedYear = yearSelect ? parseInt(yearSelect.value) : new Date().getFullYear();
+        
+        var now = new Date();
+        var m0 = new Date(now.getFullYear(), now.getMonth(), 1);
+        var mo = 0;
+        for(var i = 0; i < activeOrders.length; i++) { 
+            var od = activeOrders[i];
+            if(od.status === '完成') {
+                // 获取实际完工时间
+                var completeTime = null;
+                if(od.processes) {
+                    var lastDone = null;
+                    for(var j = 0; j < PROCESSES.length; j++) {
+                        var p = PROCESSES[j];
+                        if(od.processes[p] && od.processes[p].status === 'done' && od.processes[p].date) {
+                            var d = new Date(od.processes[p].date);
+                            if(!lastDone || d > lastDone) {
+                                lastDone = d;
+                            }
+                        }
+                    }
+                    completeTime = lastDone;
+                }
+                if(!completeTime) completeTime = new Date(od.createdAt);
+                // 按实际完工时间统计本月产量
+                if(completeTime >= m0) mo += od.quantity; 
+            }
+        }
+        document.getElementById('monthlyOutput').innerText = mo;
+        
+        // 车辆类型统计 - 按完工时间统计，使用选择的年份
+        var yearStart = new Date(selectedYear, 0, 1);
+        var yearEnd = new Date(selectedYear + 1, 0, 1);
+        var dayStart = new Date(selectedYear, now.getMonth(), now.getDate());
+        var weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        var monthStart = new Date(selectedYear, now.getMonth(), 1);
+        
+        // 完工订单统计（按实际完工时间，不是创建时间）
+        var dayStats = {}, weekStats = {}, monthStats = {}, yearStats = {};
+        
+        for(var i = 0; i < activeOrders.length; i++) {
+            var od = activeOrders[i];
+            if(od.vehicleType && od.status === '完成') {
+                // 获取实际完工时间（使用最后一个工序的完成时间）
+                var completeTime = null;
+                if(od.processes) {
+                    var lastDone = null;
+                    for(var j = 0; j < PROCESSES.length; j++) {
+                        var p = PROCESSES[j];
+                        if(od.processes[p] && od.processes[p].status === 'done' && od.processes[p].date) {
+                            var d = new Date(od.processes[p].date);
+                            if(!lastDone || d > lastDone) {
+                                lastDone = d;
+                            }
+                        }
+                    }
+                    completeTime = lastDone;
+                }
+                // 如果没有工序时间，使用createdAt
+                if(!completeTime) completeTime = new Date(od.createdAt);
+                
+                var vt = od.vehicleType;
+                
+                // 只统计本年内的完工订单
+                if(completeTime >= yearStart && completeTime < yearEnd) {
+                    if(completeTime >= dayStart) dayStats[vt] = (dayStats[vt] || 0) + od.quantity;
+                    if(completeTime >= weekStart) weekStats[vt] = (weekStats[vt] || 0) + od.quantity;
+                    if(completeTime >= monthStart) monthStats[vt] = (monthStats[vt] || 0) + od.quantity;
+                    yearStats[vt] = (yearStats[vt] || 0) + od.quantity;
+                }
+            }
+        }
+        
+        // 新增订单统计（按创建时间）
+        var dayNewStats = {}, weekNewStats = {}, monthNewStats = {}, yearNewStats = {};
+        
+        for(var i = 0; i < activeOrders.length; i++) {
+            var od = activeOrders[i];
+            if(od.vehicleType) {
+                var created = new Date(od.createdAt);
+                var vt = od.vehicleType;
+                
+                // 只统计本年内创建的新增订单
+                if(created >= yearStart && created < yearEnd) {
+                    if(created >= dayStart) dayNewStats[vt] = (dayNewStats[vt] || 0) + od.quantity;
+                    if(created >= weekStart) weekNewStats[vt] = (weekNewStats[vt] || 0) + od.quantity;
+                    if(created >= monthStart) monthNewStats[vt] = (monthNewStats[vt] || 0) + od.quantity;
+                    yearNewStats[vt] = (yearNewStats[vt] || 0) + od.quantity;
+                }
+            }
+        }
+        
+        function renderVehicleStats(statsNew, statsComplete) {
+            var html = '';
+            var allKeys = {};
+            for(var k in statsNew) allKeys[k] = true;
+            for(var k in statsComplete) allKeys[k] = true;
+            var sorted = Object.keys(allKeys).sort();
+            
+            if(sorted.length === 0) return '<span class="text-muted">暂无数据</span>';
+            
+            var totalNew = 0, totalComplete = 0;
+            for(var i = 0; i < sorted.length; i++) {
+                var vt = sorted[i];
+                var newCount = statsNew[vt] || 0;
+                var completeCount = statsComplete[vt] || 0;
+                totalNew += newCount;
+                totalComplete += completeCount;
+                html += '<div class="d-flex justify-content-between align-items-center mb-1"><span>' + vt + '</span><div><span class="text-primary me-1">新:' + newCount + '</span><span class="text-success">完:' + completeCount + '</span></div></div>';
+            }
+            html += '<hr><div class="d-flex justify-content-between align-items-center"><strong>合计</strong><div><span class="text-primary me-1">新:' + totalNew + '</span><span class="text-success">完:' + totalComplete + '</span></div></div>';
+            return html;
+        }
+        
+        document.getElementById('dayVehicleStats').innerHTML = renderVehicleStats(dayNewStats, dayStats);
+        document.getElementById('weekVehicleStats').innerHTML = renderVehicleStats(weekNewStats, weekStats);
+        document.getElementById('monthVehicleStats').innerHTML = renderVehicleStats(monthNewStats, monthStats);
+        document.getElementById('yearVehicleStats').innerHTML = renderVehicleStats(yearNewStats, yearStats);
+        
+        var r = activeOrders.slice().sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 5);
+        var html = '';
+        for(var i = 0; i < r.length; i++) {
+            var o = r[i];
+            // 状态显示：完成显示"完工"，生产中显示当前工序，待生产显示"待生产"
+            var dispStatus = (o.status === '完成') ? '完工' : (o.status === '生产中' ? (o.currentProcess || '生产中') : o.status);
+            var currProc = (o.status === '完成') ? '完工' : (o.status === '生产中' ? (o.currentProcess || '-') : (o.currentProcess || '待生产'));
+            html += '<tr><td>' + o.productionOrderNo + '</td><td>' + badge(o.priority) + '</td><td>' + (o.tankVolume || '-') + '</td><td>' + (o.vehicleType || '-') + '</td><td>' + (o.chassisDate || '-') + '</td><td><span class="status-badge status-' + statusClass(o.status) + '">' + dispStatus + '</span></td><td>' + currProc + '</td></tr>';
+        }
+        document.querySelector('#recentTable tbody').innerHTML = html;
+    }
+    
+    // 交付预警独立函数 - 新版本：按预警等级分类的表格
+    function updateWarningPanel() {
+        var activeOrders = orders.filter(function(o) { return o.status !== '已删除'; });
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        var warningList = [];
+        
+        for(var i = 0; i < activeOrders.length; i++) {
+            var od = activeOrders[i];
+            if(od.status === '完成' || !od.deliveryDate) continue;
+            
+            var deliveryDate = new Date(od.deliveryDate);
+            deliveryDate.setHours(0, 0, 0, 0);
+            
+            // 计算剩余天数
+            var daysUntil = Math.ceil((deliveryDate - today) / (1000 * 60 * 60 * 24));
+            
+            // 确定预警等级
+            var warningLevel, warningText, badgeClass, badgeText;
+            
+            if(daysUntil <= 3) {
+                // 🚨 🔴紧急 ≤3天
+                warningLevel = 1;
+                warningText = daysUntil <= 0 ? '已逾期' : daysUntil + '天';
+                badgeClass = 'bg-danger';
+                badgeText = '🚨 🔴紧急';
+            } else if(daysUntil <= 7) {
+                // 🟠警告 4-7天
+                warningLevel = 2;
+                warningText = daysUntil + '天';
+                badgeClass = 'bg-warning text-dark';
+                badgeText = '🟠警告';
+            } else if(daysUntil <= 14) {
+                // 🟡注意 8-14天
+                warningLevel = 3;
+                warningText = daysUntil + '天';
+                badgeClass = 'bg-secondary';
+                badgeText = '🟡注意';
+            } else {
+                // ✅正常 >14天
+                warningLevel = 4;
+                warningText = daysUntil + '天';
+                badgeClass = 'bg-success';
+                badgeText = '✅正常';
+            }
+            
+            // 生成说明
+            var note = '';
+            if(daysUntil <= 0) note = '已逾期，请立即处理！';
+            else if(daysUntil <= 3) note = '紧急，需尽快生产！';
+            else if(daysUntil <= 7) note = '注意生产进度';
+            else if(daysUntil <= 14) note = '按计划生产';
+            else note = '时间充裕';
+            
+            warningList.push({
+                order: od,
+                daysUntil: daysUntil,
+                warningLevel: warningLevel,
+                warningText: warningText,
+                badgeClass: badgeClass,
+                badgeText: badgeText,
+                note: note,
+                deliveryDate: deliveryDate
+            });
+        }
+        
+        // 排序：按预警等级(紧急>警告>注意>正常)，再按剩余天数升序
+        warningList.sort(function(a, b) {
+            if(a.warningLevel !== b.warningLevel) return a.warningLevel - b.warningLevel;
+            return a.daysUntil - b.daysUntil;
+        });
+        
+        var tbody = document.getElementById('warningTableBody');
+        var noDataDiv = document.getElementById('noWarningData');
+        
+        if(warningList.length === 0) {
+            tbody.innerHTML = '';
+            document.getElementById('warningTable').style.display = 'none';
+            noDataDiv.style.display = 'block';
+            return;
+        }
+        
+        document.getElementById('warningTable').style.display = 'table';
+        noDataDiv.style.display = 'none';
+        
+        var html = '';
+        for(var i = 0; i < warningList.length; i++) {
+            var item = warningList[i];
+            var o = item.order;
+            
+            html += '<tr>';
+            html += '<td>' + (i + 1) + '</td>';
+            html += '<td><strong>' + o.productionOrderNo + '</strong></td>';
+            html += '<td>' + badge(o.priority) + '</td>';
+            html += '<td>' + (o.tankVolume || '-') + '</td>';
+            html += '<td>' + (o.vehicleType || '-') + '</td>';
+            html += '<td>' + (o.chassisDate || '-') + '</td>';
+            html += '<td>' + (o.deliveryDate || '-') + '</td>';
+            html += '<td><strong>' + item.warningText + '</strong></td>';
+            html += '<td><span class="badge ' + item.badgeClass + '">' + item.badgeText + '</span></td>';
+            html += '<td><small>' + item.note + '</small></td>';
+            html += '</tr>';
+        }
+        
+        tbody.innerHTML = html;
+    }
+    
+    // 搜索订单
+    function searchOrder() {
+        var searchNo = document.getElementById('searchOrderNo').value.trim();
+        var resultDiv = document.getElementById('searchResult');
+        
+        if(!searchNo) {
+            resultDiv.style.display = 'none';
+            return;
+        }
+        
+        // 模糊匹配
+        var found = orders.filter(function(o) { 
+            return o.productionOrderNo && o.productionOrderNo.toLowerCase().indexOf(searchNo.toLowerCase()) !== -1;
+        });
+        
+        if(found.length === 0) {
+            resultDiv.innerHTML = '<div class="alert alert-warning">未找到订单号包含"' + searchNo + '"的订单</div>';
+            resultDiv.style.display = 'block';
+            return;
+        }
+        
+        var html = '<div class="alert alert-info"><strong>查询结果：</strong>找到 ' + found.length + ' 个订单</div><table class="table table-sm table-bordered"><thead><tr><th>订单号</th><th>产品型号</th><th>数量</th><th>状态</th><th>当前工序</th><th>操作</th></tr></thead><tbody>';
+        
+        found.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+        
+        for(var i = 0; i < found.length; i++) {
+            var o = found[i];
+            var dispStatus = (o.status === '完成') ? '完工' : o.status;
+            html += '<tr><td>' + (i + 1) + '</td><td><strong>' + o.productionOrderNo + '</strong></td><td>' + (o.productModel || '-') + '</td><td>' + o.quantity + '</td><td><span class="status-badge status-' + statusClass(o.status) + '">' + dispStatus + '</span></td><td>' + (o.currentProcess || '-') + '</td><td><button class="btn btn-primary btn-sm" onclick="openPM(' + o.id + ')">查看</button></td></tr>';
+        }
+        
+        html += '</tbody></table>';
+        resultDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+    }
+    
+    // 回车搜索
+    document.addEventListener('keypress', function(e) {
+        if(e.key === 'Enter' && document.activeElement.id === 'searchOrderNo') {
+            searchOrder();
+        }
+    });
+
+    function loadOrders() {
+        var tb = document.querySelector('#ordersTable tbody');
+        // 只显示非删除的订单
+        var activeOrders = orders.filter(function(o) { return o.status !== '已删除'; });
+        // 数据同步：确保状态和当前工序一致
+        for(var i = 0; i < activeOrders.length; i++) {
+            var o = activeOrders[i];
+            if(o.status === '生产中' && !o.currentProcess) {
+                o.currentProcess = '待生产';
+            }
+        }
+        if(activeOrders.length === 0) { tb.innerHTML = '<tr><td colspan="13" class="text-center text-muted">暂无订单数据</td></tr>'; return; }
+        // 按订单号从小到大排序
+        var sorted = activeOrders.slice().sort(function(a, b) { 
+        var orderA = a.productionOrderNo || '';
+        var orderB = b.productionOrderNo || '';
+        return orderA.localeCompare(orderB, 'zh-CN');
+    });
+        var html = '';
+        for(var i = 0; i < sorted.length; i++) {
+            var o = sorted[i];
+            // 状态显示：完成显示"完工"，生产中显示当前工序，待生产显示"待生产"
+            var dispStatus = (o.status === '完成') ? '完工' : (o.status === '生产中' ? (o.currentProcess || '生产中') : o.status);
+            var currProc = (o.status === '完成') ? '完工' : (o.status === '生产中' ? (o.currentProcess || '-') : (o.currentProcess || '待生产'));
+            html += '<tr><td>' + (i + 1) + '</td><td><strong>' + o.productionOrderNo + '</strong></td><td>' + badge(o.priority) + '</td><td>' + (o.tankVolume || '-') + '</td><td>' + (o.vehicleType || '-') + '</td><td>' + (o.orderConfig || '-') + '</td><td>' + (o.tankMaterial || '-') + '</td><td>' + (o.customerName || '-') + '</td><td>' + o.quantity + '</td><td>' + '<input type="date" class="form-control form-control-sm" value="' + (o.chassisDate || '') + '" onchange="updateOrderChassisDate(' + o.id + ', this.value)">' + '</td><td>' + (o.orderTime ? new Date(o.orderTime).toLocaleString('zh-CN') : '-') + '</td><td><span class="status-badge status-' + statusClass(o.status) + '">' + dispStatus + '</span></td><td><button class="btn btn-primary btn-sm me-1" onclick="openPM(' + o.id + ')">工序</button><button class="btn btn-danger btn-sm" onclick="deleteOrder(' + o.id + ')">删除</button></td></tr>';
+        }
+        tb.innerHTML = html;
+    }
+    
+    // 加载已删除的订单
+    function loadDeletedOrders() {
+        var tb = document.querySelector('#deletedTable');
+        if(!tb) return;
+        var deletedOrders = orders.filter(function(o) { return o.status === '已删除'; });
+        if(deletedOrders.length === 0) { tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无已删除订单</td></tr>'; return; }
+        var sorted = deletedOrders.slice().sort(function(a, b) { return new Date(b.deletedAt) - new Date(a.deletedAt); });
+        var html = '';
+        for(var i = 0; i < sorted.length; i++) {
+            var o = sorted[i];
+            var delTime = o.deletedAt ? new Date(o.deletedAt).toLocaleString('zh-CN') : '-';
+            html += '<tr><td>' + (i + 1) + '</td><td><strong>' + o.productionOrderNo + '</strong></td><td>' + (o.productModel || '-') + '</td><td>' + o.quantity + '</td><td>' + delTime + '</td><td>' + (o.deleteOperator || '-') + '</td><td><button class="btn btn-primary btn-sm me-1" onclick="restoreOrder(' + o.id + ')">恢复</button><button class="btn btn-danger btn-sm" onclick="permanentDelete(' + o.id + ')">彻底删除</button></td></tr>';
+        }
+        tb.innerHTML = html;
+    }
+    
+    // 恢复已删除的订单
+    function restoreOrder(id) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        if(!confirm('确定要恢复订单 ' + o.productionOrderNo + ' 吗？')) return;
+        o.status = '待生产';
+        o.deletedAt = null;
+        o.deleteOperator = null;
+        save();
+        loadDeletedOrders();
+        loadOrders();
+        updateDashboard();
+        alert('订单已恢复！');
+    }
+    
+    // 彻底删除订单
+    function permanentDelete(id) {
+        var o = null;
+        for(var i = 0; i < orders.length; i++) { if(orders[i].id === id) { o = orders[i]; break; } }
+        if(!o) return;
+        if(!confirm('确定要彻底删除订单 ' + o.productionOrderNo + ' 吗？此操作不可恢复！')) return;
+        if(!confirm('再次确认：彻底删除后数据将无法恢复！')) return;
+        for(var i = 0; i < orders.length; i++) {
+            if(orders[i].id === id) {
+                orders.splice(i, 1);
+                break;
+            }
+        }
+        save();
+        loadDeletedOrders();
+        updateDashboard();
+        alert('订单已彻底删除！');
+    }
+    
+    // 批量恢复所有已删除订单
+    function restoreAllDeleted() {
+        var deletedOrders = orders.filter(function(o) { return o.status === '已删除'; });
+        if(deletedOrders.length === 0) { alert('暂无已删除订单'); return; }
+        if(!confirm('确定要恢复所有 ' + deletedOrders.length + ' 个已删除订单吗？')) return;
+        for(var i = 0; i < deletedOrders.length; i++) {
+            deletedOrders[i].status = '待生产';
+            deletedOrders[i].deletedAt = null;
+            deletedOrders[i].deleteOperator = null;
+        }
+        save();
+        loadDeletedOrders();
+        loadOrders();
+        updateDashboard();
+        alert('已恢复所有订单！');
+    }
+    
+    // 导出订单为Excel
+    function exportOrders() {
+        var data = orders.filter(function(o) { return o.status !== '已删除'; });
+        if(data.length === 0) { alert('暂无数据可导出'); return; }
+        
+        // 表头
+        var csvContent = '\uFEFF订单号,优先等级,罐体容积,车辆类型,订单配置,罐体材质,客户,数量,下单时间,交付时间,状态,当前工序,进度\n';
+        
+        data.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+        
+        for(var i = 0; i < data.length; i++) {
+            var o = data[i];
+            var status = (o.status === '完成') ? '完工' : o.status;
+            var currProc = (o.currentProcess || '-');
+            var orderTime = o.orderTime ? new Date(o.orderTime).toLocaleString('zh-CN') : '';
+            var deliveryDate = o.deliveryDate || '';
+            var progress = o.processProgress || 0;
+            
+            csvContent += [
+                o.productionOrderNo || '',
+                o.priority || '普通',
+                o.tankVolume || '',
+                o.vehicleType || '',
+                o.orderConfig || '',
+                o.tankMaterial || '',
+                o.customerName || '',
+                o.quantity || 0,
+                orderTime,
+                deliveryDate,
+                status,
+                currProc,
+                progress + '%'
+            ].join(',') + '\n';
+        }
+        
+        // 创建Blob并下载
+        var BOM = '\uFEFF';
+        var blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        
+        var date = new Date().toISOString().slice(0, 10);
+        link.setAttribute('href', url);
+        link.setAttribute('download', '油罐车订单_' + date + '.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    
+    // 导出交付预警
+    function exportWarning() {
+        var activeOrders = orders.filter(function(o) { return o.status !== '已删除'; });
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        var warningList = [];
+        
+        for(var i = 0; i < activeOrders.length; i++) {
+            var od = activeOrders[i];
+            if(od.status === '完成' || !od.deliveryDate) continue;
+            
+            var deliveryDate = new Date(od.deliveryDate);
+            deliveryDate.setHours(0, 0, 0, 0);
+            
+            var daysUntil = Math.ceil((deliveryDate - today) / (1000 * 60 * 60 * 24));
+            
+            // 确定预警等级
+            var warningLevel, warningText;
+            
+            if(daysUntil <= 3) {
+                warningLevel = 1;
+                warningText = daysUntil <= 0 ? '已逾期' : daysUntil + '天';
+            } else if(daysUntil <= 7) {
+                warningLevel = 2;
+                warningText = daysUntil + '天';
+            } else if(daysUntil <= 14) {
+                warningLevel = 3;
+                warningText = daysUntil + '天';
+            } else {
+                warningLevel = 4;
+                warningText = daysUntil + '天';
+            }
+            
+            warningList.push({
+                order: od,
+                daysUntil: daysUntil,
+                warningLevel: warningLevel,
+                warningText: warningText,
+                deliveryDate: deliveryDate
+            });
+        }
+        
+        if(warningList.length === 0) { alert('暂无预警数据可导出'); return; }
+        
+        // 排序：按预警等级，再按剩余天数
+        warningList.sort(function(a, b) {
+            if(a.warningLevel !== b.warningLevel) return a.warningLevel - b.warningLevel;
+            return a.daysUntil - b.daysUntil;
+        });
+        
+        // 生成CSV内容
+        var csvContent = '\uFEFF排序,订单号,优先等级,罐体容积,车辆类型,底盘到厂时间,交付日期,剩余天数,预警等级,说明\n';
+        
+        for(var i = 0; i < warningList.length; i++) {
+            var item = warningList[i];
+            var o = item.order;
+            
+            var note = '';
+            if(item.daysUntil <= 0) note = '已逾期，请立即处理！';
+            else if(item.daysUntil <= 3) note = '紧急，需尽快生产！';
+            else if(item.daysUntil <= 7) note = '注意生产进度';
+            else if(item.daysUntil <= 14) note = '按计划生产';
+            else note = '时间充裕';
+            
+            var warningLabel = '';
+            if(item.warningLevel === 1) warningLabel = '🚨 🔴紧急';
+            else if(item.warningLevel === 2) warningLabel = '🟠警告';
+            else if(item.warningLevel === 3) warningLabel = '🟡注意';
+            else warningLabel = '✅正常';
+            
+            csvContent += [
+                i + 1,
+                o.productionOrderNo || '',
+                o.priority || '普通',
+                o.tankVolume || '',
+                o.vehicleType || '',
+                o.chassisDate || '',
+                o.deliveryDate || '',
+                item.warningText,
+                warningLabel,
+                note
+            ].join(',') + '\n';
+        }
+        
+        // 下载
+        var BOM = '\uFEFF';
+        var blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        var date = new Date().toISOString().slice(0, 10);
+        link.setAttribute('href', url);
+        link.setAttribute('download', '交付预警_' + date + '.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // ========== 云端同步功能 ==========
+    // 获取云端配置
+    function getCloudConfig() {
+        return {
+            apiKey: localStorage.getItem('cloudApiKey') || '',
+            binId: localStorage.getItem('cloudBinId') || '',
+            enabled: localStorage.getItem('cloudEnabled') === 'true'
+        };
+    }
+
+    // 保存云端配置
+    function saveCloudConfig() {
+        var apiKey = document.getElementById('cloudApiKey').value.trim();
+        var binId = document.getElementById('cloudBinId').value.trim();
+        var enabled = document.getElementById('cloudEnabled').checked;
+        
+        localStorage.setItem('cloudApiKey', apiKey);
+        localStorage.setItem('cloudBinId', binId);
+        localStorage.setItem('cloudEnabled', enabled);
+        
+        alert('云端配置已保存！');
+        loadFromCloud(); // 配置保存后立即同步
+    }
+
+    // 测试云端连接
+    function testCloudConnection() {
+        var config = getCloudConfig();
+        if(!config.apiKey || !config.binId) {
+            alert('请先填写 API Key 和 Bin ID');
+            return;
+        }
+        
+        fetch('https://api.jsonbin.io/v3/b/' + config.binId, {
+            headers: {
+                'X-Access-Key': config.apiKey
+            }
+        })
+        .then(response => {
+            if(response.ok) {
+                alert('连接成功！✓');
+            } else {
+                alert('连接失败，请检查 API Key 和 Bin ID 是否正确');
+            }
+        })
+        .catch(err => {
+            alert('连接失败: ' + err.message);
+        });
+    }
+
+    // 从云端加载数据
+    function loadFromCloud(callback) {
+        var config = getCloudConfig();
+        if(!config.enabled || !config.apiKey || !config.binId) {
+            if(callback) callback();
+            return;
+        }
+        
+        fetch('https://api.jsonbin.io/v3/b/' + config.binId + '/latest', {
+            headers: {
+                'X-Access-Key': config.apiKey
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.record && data.record.orders) {
+                orders = data.record.orders;
+                save(); // 保存到本地
+                console.log('已从云端同步数据，共 ' + orders.length + ' 条订单');
+                updateDashboard();
+                loadOrders();
+                loadProduction();
+                updateWarningPanel();
+                if(callback) callback();
+            } else {
+                if(callback) callback();
+            }
+        })
+        .catch(err => {
+            console.log('云端同步失败:', err.message);
+            if(callback) callback();
+        });
+    }
+
+    // 保存到云端
+    function saveToCloud() {
+        var config = getCloudConfig();
+        if(!config.enabled || !config.apiKey || !config.binId) {
+            return;
+        }
+        
+        var data = { orders: orders };
+        
+        fetch('https://api.jsonbin.io/v3/b/' + config.binId, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Access-Key': config.apiKey
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('已同步到云端');
+        })
+        .catch(err => {
+            console.log('云端同步失败:', err.message);
+        });
+    }
+
+    // 修改原 save 函数，添加云端同步
+    var originalSave = save;
+    save = function() { 
+        originalSave(); 
+        saveToCloud(); // 自动同步到云端
+    };
+
+    // 导出数据文件
+    function exportData() {
+        var data = JSON.stringify({ orders: orders }, null, 2);
+        var blob = new Blob([data], { type: 'application/json' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        var date = new Date().toISOString().slice(0, 10);
+        link.download = '罐车生产数据_' + date + '.json';
+        link.click();
+    }
+
+    // 导入数据文件
+    function importData() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var data = JSON.parse(e.target.result);
+                    if(data.orders) {
+                        orders = data.orders;
+                        save();
+                        alert('导入成功！共 ' + orders.length + ' 条订单');
+                        updateDashboard();
+                        loadOrders();
+                        loadProduction();
+                        updateWarningPanel();
+                    } else {
+                        alert('数据格式错误');
+                    }
+                } catch(err) {
+                    alert('解析失败: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    // 修改初始化函数，添加云端加载
+    var originalInit = init;
+    init = function() {
+        // 尝试从云端加载
+        loadFromCloud(function() {
+            originalInit();
+        });
+    };
+
+    // ========== 云端同步功能结束 ==========
+
+    window.onload = init;
+    </script>
+</body>
+</html>
+
+
